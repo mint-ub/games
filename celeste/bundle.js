@@ -4711,171 +4711,10 @@ function SaveManager() {
   } }, /* @__PURE__ */ h("span", { class: "material-symbols-rounded" }, "cloud_download"), /* @__PURE__ */ h("span", { class: "label" }, "Download current save")));
 }
 
-function App() {
-  this.css = `
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    align-items: center;   /* vertical centering */
-    justify-content: center; /* horizontal centering */
-    margin: 0;
-    background-color: var(--bg);
-    color: var(--fg);
-    overflow: hidden;
-
-.game {
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    justify-content: center; /* horizontal centering */
-    align-items: center;     /* vertical centering */
-}
-
-canvascontainer {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    height: 100%;
-}
-
-canvas {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    display: block;
-}
-
-
-    .top-bar, .content, footer, dialog {
-      display: none; /* hide UI for fullscreen auto-play */
-    }
-  `;
-
-  this.loaded = false;
-  this.started = false;
-  this.allowPlay = false;
-
-  let updatePlay = () => {
-    this.allowPlay = this.loaded || !this.started;
-  };
-  handle(use(this.loaded), updatePlay);
-  handle(use(this.started), updatePlay);
-
-  // Initialize frontend and auto-start
-  window.initPromise = (async () => {
-    await init();
-    this.loaded = true;
-    log("var(--success)", "Loaded frontend!");
-    if (!this.started) startgame();
-  })();
-
-  this.fullscreen = false;
-  document.addEventListener("fullscreenchange", () => {
-    this.fullscreen = document.fullscreen;
-  });
-
-  setInterval(() => {
-    this.fps = fps;
-  }, 1e3);
-
-  const startgame = () => {
-    this.started = true;
-    start(this.canvas);
-    this.allowPlay = false;
-  };
-
-  return h("main", { class: [use(store.theme)] },
-    h("div", { class: "game" },
-      h("canvascontainer", null,
-        h("div", { class: [use(this.started, f => f && "hidden")] },
-          h("div", null,
-
-          )
-        ),
-        h("canvas", {
-          id: "canvas",
-          "bind:this": use(this.canvas),
-          "on:contextmenu": e => e.preventDefault()
-        })
-      )
-    )
-  );
-}
-
-function FuckMozilla() {
-  this.css = `
-		width: min(960px, 100%);
-
-		background-color: var(--accent);
-		color: var(--fg);
-		padding: 1em;
-		padding-top: 0.5em;
-		margin-bottom: 1em;
-		border-radius: 0.6rem;
-
-
-		h1 {
-			display: flex;
-			align-items: center;
-			gap: 0.25em;
-			span {
-				font-size: 2.25rem;
-			}
-		}
-	`;
-  return /* @__PURE__ */ h("div", null, /* @__PURE__ */ h("h1", null, /* @__PURE__ */ h("span", { class: "material-symbols-rounded" }, "warning"), "THIS MIGHT NOT WORK WELL ON FIREFOX!"), /* @__PURE__ */ h("p", null, "Chromium's WASM implementation is generally better, and it was what was tested on the most. It will probably still work (might not!) on Firefox but you should really be using a Chromium-based browser for this."), /* @__PURE__ */ h("button", { "on:click": () => this.root.remove() }, "Dismiss"));
-}
-function Logo() {
-  this.css = `
-		.logo {
-			image-rendering: pixelated;
-			-ms-interpolation-mode: nearest-neighbor;
-			width: 3.75rem;
-			height: 3.75rem;
-			margin: 0;
-			padding: 0;
-		}
-
-		h1 {
-			font-size: 2rem;
-			display: flex;
-		}
-
-		h1 subt {
-			font-size: 0.5em;
-			margin-left: 0.25em;
-			color: var(--fg6);
-		}
-	`;
-  return /* @__PURE__ */ h("span", { class: "flex vcenter" }, /* @__PURE__ */ h("img", { class: "logo", src: document.querySelector("link[rel=icon]").href }), /* @__PURE__ */ h("h1", null, "celeste-wasm", /* @__PURE__ */ h("subt", null, "v", version)));
-}
-
+// --- Global State & Initialization ---
+window.isGameStarting = false;
 var import_jszip = __toESM(require_jszip_min());
-var store = $store(
-  {
-    theme: window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
-  },
-  { ident: "user-options", backing: "localstorage", autosave: "auto" }
-);
 
-if (window.SINGLEFILE) {
-  document.body.querySelector("#interstitial").remove();
-}
-
-var chunkify = function* (itr, size) {
-  let chunk = [];
-  for (const v of itr) {
-    chunk.push(v);
-    if (chunk.length === size) {
-      yield chunk;
-      chunk = [];
-    }
-  }
-  if (chunk.length) yield chunk;
-};
-
-var import_jszip = __toESM(require_jszip_min());
 var store = $store(
   {
     theme: window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
@@ -4899,96 +4738,115 @@ var chunkify = function* (itr, size) {
   if (chunk.length) yield chunk;
 };
 
-function IntroSplash() {
+
+function App() {
   this.css = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 9999999;
     width: 100vw;
     height: 100vh;
     display: flex;
-    flex-direction: column;
     align-items: center;
+    justify-content: center;
     margin: 0;
     background-color: var(--bg);
     color: var(--fg);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    overflow: hidden;
 
-    .mountain {
-      width: 100vw;
-      height: 100vh;
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 0;
-      background-image: url(${mountainsrc.href});
-      background-size: cover;
-      background-position: center;
+    .game {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
 
-    #opaque {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 1;
-      background-color: var(--bg);
-      opacity: 0;
-      animation: fadeout 1.3s ease 0s 1;
+    canvascontainer {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
     }
 
-    #blur {
-      backdrop-filter: blur(24px);
-      background-color: color-mix(in srgb, var(--bg) 60%, transparent);
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 2;
+    canvas {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
     }
 
-    .info {
-      z-index: 3;
-      border-radius: 1em;
-      background-color: color-mix(in srgb, var(--surface0) 80%, transparent);
-      backdrop-filter: blur(30px);
-      max-width: max(480px, 40%);
-      padding: 2em;
-      animation: fadeinandmove 1s ease 0s 1;
-      div { margin-block: 1em; }
+    .top-bar, .content, footer, dialog {
+      display: none;
     }
+  `;
 
-    button,
-    #bar {
-      animation: fadeinandmove 0.15s ease 0s 1;
-      width: 100%;
-      height: 0.5em;
-      background-color: var(--bg);
-      border-radius: 0.5em;
-    }
+  this.loaded = false;
+  this.started = false;
 
-    #progress {
-      transition: width 0.2s ease;
-      height: 0.5em;
-      background-color: var(--accent);
-      border-radius: 0.5em;
-    }
+  window.initPromise = (async () => {
 
-    .inner {
-      margin-inline: 0.8rem;
-    }
+    if (window.isGameEngineRunning) return;
+    window.isGameEngineRunning = true;
 
-    .action { padding: 1em; }
+    await init();
+    this.loaded = true;
+    log("var(--success)", "Loaded frontend!");
+    if (!this.started) startgame();
+  })();
 
-    @keyframes fadeout {
-      from { opacity: 1; scale: 1; }
-      to { opacity: 0; scale: 1.2; }
-    }
+  const startgame = () => {
+    this.started = true;
+    start(this.canvas);
+  };
+
+  return h("main", { class: [use(store.theme)] },
+    h("div", { class: "game" },
+      h("canvascontainer", null,
+        h("canvas", {
+          id: "canvas",
+          "bind:this": use(this.canvas),
+          "on:contextmenu": e => e.preventDefault()
+        })
+      )
+    )
+  );
+}
+
+function FuckMozilla() {
+  this.css = `
+    width: min(960px, 100%);
+    background-color: var(--accent);
+    color: var(--fg);
+    padding: 1em;
+    padding-top: 0.5em;
+    margin-bottom: 1em;
+    border-radius: 0.6rem;
+    h1 { display: flex; align-items: center; gap: 0.25em; span { font-size: 2.25rem; } }
+  `;
+  return h("div", null, h("h1", null, h("span", { class: "material-symbols-rounded" }, "warning"), "THIS MIGHT NOT WORK WELL ON FIREFOX!"), h("p", null, "Chromium's WASM implementation is generally better. Use a Chromium-based browser for the best experience."), h("button", { "on:click": () => this.root.remove() }, "Dismiss"));
+}
+
+function Logo() {
+  this.css = `
+    .logo { image-rendering: pixelated; width: 3.75rem; height: 3.75rem; margin: 0; }
+    h1 { font-size: 2rem; display: flex; }
+    h1 subt { font-size: 0.5em; margin-left: 0.25em; color: var(--fg6); }
+  `;
+  return h("span", { class: "flex vcenter" }, h("img", { class: "logo", src: document.querySelector("link[rel=icon]").href }), h("h1", null, "celeste-wasm", h("subt", null, "v", version)));
+}
+
+
+function IntroSplash() {
+  this.css = `
+    position: absolute; top: 0; left: 0; z-index: 9999999; width: 100vw; height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background-color: var(--bg); color: var(--fg);
+
+    .mountain { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; background-image: url(${mountainsrc.href}); background-size: cover; background-position: center; }
+    #blur { backdrop-filter: blur(24px); background-color: color-mix(in srgb, var(--bg) 60%, transparent); position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; }
+    .info { z-index: 3; border-radius: 1em; background-color: color-mix(in srgb, var(--surface0) 80%, transparent); backdrop-filter: blur(30px); max-width: max(480px, 40%); padding: 2em; }
+    #bar { width: 100%; height: 0.5em; background-color: var(--bg); border-radius: 0.5em; margin-top: 1em; }
+    #progress { transition: width 0.2s ease; height: 0.5em; background-color: var(--accent); border-radius: 0.5em; }
+    @keyframes fadeout { from { opacity: 1; } to { opacity: 0; } }
   `;
 
   let encbuf;
@@ -5007,22 +4865,12 @@ function IntroSplash() {
   }
 
   this.decrypted = !DRM || window.SINGLEFILE;
-  this.decrypterror = "";
 
-  // ----- auto decrypt -----
   let decrypt = async () => {
-    if (window.SINGLEFILE || !DRM) {
-      this.decrypted = true;
-      return;
-    }
-
+    if (window.SINGLEFILE || !DRM) return;
     try {
-      // Update this path to your key file if needed
-      let keyFileUrl = './English.txt';
-      let res = await fetch(keyFileUrl);
+      let res = await fetch('./English.txt');
       let key = new Uint8Array(await res.arrayBuffer());
-      this.progress = 0;
-
       for (let i = 0; i < encbuf.length; i += 4096) {
         encbuf[i] ^= key[i % key.length];
         if (i % (4096 * 200) === 0) {
@@ -5030,100 +4878,91 @@ function IntroSplash() {
           await new Promise(r => requestAnimationFrame(r));
         }
       }
-
       this.decrypted = true;
-    } catch (e) {
-      console.error("Decryption failed:", e);
-      this.decrypterror = "Auto decryption failed, check key file path.";
-    }
+    } catch (e) { console.error("Decryption failed", e); }
   };
 
-  // ----- finish (play) -----
   let finish = async () => {
+    // Safety lock: Ensure we don't finish if App has already taken over
+    if (window.isGameStarting) return;
+    window.isGameStarting = true;
+
     window.assetblob = URL.createObjectURL(new Blob([encbuf]));
     await init();
     await new Promise(r => loadData(dotnet.instance.Module, r));
-    console.info("Cached and loaded assets into VFS");
     localStorage["vfs_populated"] = true;
-    await loadfrontend();
-
+    
     if (this.root) {
-      this.root.addEventListener("animationend", () => this.root.remove());
-      this.root.style.animation = "fadeout 0.5s ease";
+      this.root.style.animation = "fadeout 0.5s ease forwards";
+      this.root.addEventListener("animationend", () => {
+        this.root.remove();
+        loadfrontend();
+      });
+    } else {
+      loadfrontend();
     }
   };
 
-  // ----- auto download -----
   let download = async () => {
+    if (this.downloading && !window.SINGLEFILE) return;
     this.downloading = true;
-    this.progress = 0;
 
-    if (SPLIT) {
-      encbuf = new Uint8Array(SIZE);
-      await Promise.all([...chunkify(splits.entries(), Math.ceil(splits.length / 5))].map(async chunk => {
-        for (let [idx, file] of chunk) {
-          let data = await fetch(`_framework/data/${file}`);
-          let buf = new Uint8Array(await data.arrayBuffer());
-          encbuf.set(buf, idx * CHUNKSIZE);
-          this.progress += CHUNKSIZE / SIZE * 100;
+    if (!window.SINGLEFILE) {
+        encbuf = new Uint8Array(SIZE);
+        if (SPLIT) {
+            await Promise.all([...chunkify(splits.entries(), Math.ceil(splits.length / 5))].map(async chunk => {
+                for (let [idx, file] of chunk) {
+                    let data = await fetch(`_framework/data/${file}`);
+                    let buf = new Uint8Array(await data.arrayBuffer());
+                    encbuf.set(buf, idx * CHUNKSIZE);
+                    this.progress += CHUNKSIZE / SIZE * 100;
+                }
+            }));
+        } else {
+            let data = await fetch("_framework/data.data");
+            let cur = 0;
+            for await (const chunk of data.body) {
+                encbuf.set(chunk, cur);
+                cur += chunk.length;
+                this.progress = cur / SIZE * 100;
+            }
         }
-      }));
-    } else {
-      encbuf = new Uint8Array(SIZE);
-      let data = await fetch("_framework/data.data");
-      let cur = 0;
-      for await (const chunk of data.body) {
-        encbuf.set(chunk, cur);
-        cur += chunk.length;
-        this.progress = cur / SIZE * 100;
-      }
     }
 
     this.downloaded = true;
-
-    // Auto decrypt then play
     await decrypt();
-    if (this.downloaded && this.decrypted) {
-      await finish();
-    }
+    if (this.decrypted) await finish();
   };
 
-  // ----- start everything automatically -----
   download();
 
   return h("main", { class: [use(store.theme)] },
     h("div", { class: "mountain" }),
-    h("div", { id: "opaque" }),
     h("div", { id: "blur" }),
     h("div", { class: "info" },
       h(Logo, null),
-      h("div", { class: "inner" },
-        h("p", null, "", " "),
-        h("p", null, ""),
-        h("p", null, DRM && " " || "", "", h("br", null), h("br", null), !window.SINGLEFILE && "")
-      ),
       $if(use(this.downloading),
-        $if(use(this.showprogress),
-          h("div", null,
-            h("p", null, "Downloading... (", use(this.progress, Math.floor), "% done)"),
-            h("div", { id: "bar" }, h("div", { id: "progress", style: { width: use`${this.progress}%` } }))
-          )
+        h("div", null,
+          h("p", null, "Loading Assets... (", use(this.progress, Math.floor), "% )"),
+          h("div", { id: "bar" }, h("div", { id: "progress", style: { width: use`${this.progress}%` } }))
         )
       )
     )
   );
 }
 
+// --- Bootstrapper ---
 var app;
 async function loadfrontend() {
+  if (document.getElementById("canvas")) return;
   app = h(App).$;
   document.body.appendChild(app.root);
 }
 
-if (localStorage["vfs_populated"] !== "true") {
-  document.body.appendChild(h(IntroSplash));
-} else {
+if (localStorage["vfs_populated"] === "true") {
   loadfrontend();
+} else {
+  document.body.appendChild(h(IntroSplash));
 }
 
 export { app, store };
