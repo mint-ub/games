@@ -4711,258 +4711,161 @@ function SaveManager() {
   } }, /* @__PURE__ */ h("span", { class: "material-symbols-rounded" }, "cloud_download"), /* @__PURE__ */ h("span", { class: "label" }, "Download current save")));
 }
 
-// --- Global State & Initialization ---
-window.isGameStarting = false;
-var import_jszip = __toESM(require_jszip_min());
-
-var store = $store(
-  {
-    theme: window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
-  },
-  { ident: "user-options", backing: "localstorage", autosave: "auto" }
-);
-
-if (window.SINGLEFILE) {
-  document.body.querySelector("#interstitial")?.remove();
-}
-
-var chunkify = function* (itr, size) {
-  let chunk = [];
-  for (const v of itr) {
-    chunk.push(v);
-    if (chunk.length === size) {
-      yield chunk;
-      chunk = [];
-    }
-  }
-  if (chunk.length) yield chunk;
+// --- 1. Global Engine State (Bulletproof Singleton) ---
+window.CELESTE_ENGINE_STATE = window.CELESTE_ENGINE_STATE || {
+    initStarted: false,
+    initFinished: false,
+    gameStarted: false,
+    enginePromise: null
 };
 
+// --- 2. Shared Utilities ---
+var import_jszip = __toESM(require_jszip_min());
+var store = $store(
+    { theme: window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark" },
+    { ident: "user-options", backing: "localstorage", autosave: "auto" }
+);
+
+const chunkify = function* (itr, size) {
+    let chunk = [];
+    for (const v of itr) {
+        chunk.push(v);
+        if (chunk.length === size) { yield chunk; chunk = []; }
+    }
+    if (chunk.length) yield chunk;
+};
+
+// --- 3. The Core Engine Loader ---
+// This function can be called 100 times, but will only run ONCE.
+const ensureEngineReady = async (assetBuffer = null) => {
+    if (window.CELESTE_ENGINE_STATE.enginePromise) return window.CELESTE_ENGINE_STATE.enginePromise;
+
+    window.CELESTE_ENGINE_STATE.enginePromise = (async () => {
+        window.CELESTE_ENGINE_STATE.initStarted = true;
+        
+        // If we have new assets, blob them. If not, we assume VFS is already populated.
+        if (assetBuffer) {
+            window.assetblob = URL.createObjectURL(new Blob([assetBuffer]));
+        }
+
+        console.log("Mono Runtime");
+        await init(); 
+        
+        if (assetBuffer) {
+            await new Promise(r => loadData(dotnet.instance.Module, r));
+            localStorage["vfs_populated"] = "true";
+        }
+
+        window.CELESTE_ENGINE_STATE.initFinished = true;
+        console.log("Engine Ready");
+    })();
+
+    return window.CELESTE_ENGINE_STATE.enginePromise;
+};
+
+// --- 4. UI Components ---
 
 function App() {
-  this.css = `
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    background-color: var(--bg);
-    color: var(--fg);
-    overflow: hidden;
+    this.css = `
+        width: 100vw; height: 100vh; overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+        background-color: var(--bg);
+        canvas { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+        .top-bar, .content, footer, dialog { display: none; }
+    `;
 
-    .game {
-        width: 100vw;
-        height: 100vh;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
+    // This handles the transition from "Loaded" to "Running"
+    const bootGame = async () => {
+        if (!this.canvas) return;
+        if (window.CELESTE_ENGINE_STATE.gameStarted) return;
 
-    canvascontainer {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        height: 100%;
-    }
+        await ensureEngineReady(); // Make sure init() is done
+        
+        console.log(" Starting Game Loop");
+        window.CELESTE_ENGINE_STATE.gameStarted = true;
+        start(this.canvas); 
+    };
 
-    canvas {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        display: block;
-    }
 
-    .top-bar, .content, footer, dialog {
-      display: none;
-    }
-  `;
+    setTimeout(() => bootGame(), 500);
 
-  this.loaded = false;
-  this.started = false;
-
-  window.initPromise = (async () => {
-
-    if (window.isGameEngineRunning) return;
-    window.isGameEngineRunning = true;
-
-    await init();
-    this.loaded = true;
-    log("var(--success)", "Loaded frontend!");
-    if (!this.started) startgame();
-  })();
-
-  const startgame = () => {
-    this.started = true;
-    start(this.canvas);
-  };
-
-  return h("main", { class: [use(store.theme)] },
-    h("div", { class: "game" },
-      h("canvascontainer", null,
-        h("canvas", {
-          id: "canvas",
-          "bind:this": use(this.canvas),
-          "on:contextmenu": e => e.preventDefault()
-        })
-      )
-    )
-  );
+    return h("main", { class: [use(store.theme)] },
+        h("div", { class: "game" },
+            h("canvas", {
+                id: "canvas",
+                "bind:this": use(this.canvas),
+                "on:contextmenu": e => e.preventDefault()
+            })
+        )
+    );
 }
-
-function FuckMozilla() {
-  this.css = `
-    width: min(960px, 100%);
-    background-color: var(--accent);
-    color: var(--fg);
-    padding: 1em;
-    padding-top: 0.5em;
-    margin-bottom: 1em;
-    border-radius: 0.6rem;
-    h1 { display: flex; align-items: center; gap: 0.25em; span { font-size: 2.25rem; } }
-  `;
-  return h("div", null, h("h1", null, h("span", { class: "material-symbols-rounded" }, "warning"), "THIS MIGHT NOT WORK WELL ON FIREFOX!"), h("p", null, "Chromium's WASM implementation is generally better. Use a Chromium-based browser for the best experience."), h("button", { "on:click": () => this.root.remove() }, "Dismiss"));
-}
-
-function Logo() {
-  this.css = `
-    .logo { image-rendering: pixelated; width: 3.75rem; height: 3.75rem; margin: 0; }
-    h1 { font-size: 2rem; display: flex; }
-    h1 subt { font-size: 0.5em; margin-left: 0.25em; color: var(--fg6); }
-  `;
-  return h("span", { class: "flex vcenter" }, h("img", { class: "logo", src: document.querySelector("link[rel=icon]").href }), h("h1", null, "celeste-wasm", h("subt", null, "v", version)));
-}
-
 
 function IntroSplash() {
-  this.css = `
-    position: absolute; top: 0; left: 0; z-index: 9999999; width: 100vw; height: 100vh;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background-color: var(--bg); color: var(--fg);
+    this.css = `
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background-color: var(--bg); color: var(--fg);
+        .mountain { position: absolute; inset: 0; background: url(${mountainsrc.href}) center/cover; z-index: -1; filter: blur(10px); }
+        .bar-bg { width: 300px; height: 8px; background: #222; border-radius: 4px; margin-top: 20px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+    `;
 
-    .mountain { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; background-image: url(${mountainsrc.href}); background-size: cover; background-position: center; }
-    #blur { backdrop-filter: blur(24px); background-color: color-mix(in srgb, var(--bg) 60%, transparent); position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; }
-    .info { z-index: 3; border-radius: 1em; background-color: color-mix(in srgb, var(--surface0) 80%, transparent); backdrop-filter: blur(30px); max-width: max(480px, 40%); padding: 2em; }
-    #bar { width: 100%; height: 0.5em; background-color: var(--bg); border-radius: 0.5em; margin-top: 1em; }
-    #progress { transition: width 0.2s ease; height: 0.5em; background-color: var(--accent); border-radius: 0.5em; }
-    @keyframes fadeout { from { opacity: 1; } to { opacity: 0; } }
-  `;
+    this.progress = 0;
 
-  let encbuf;
-  this.progress = 0;
-  this.downloading = false;
-  this.downloaded = false;
-  this.showprogress = true;
+    const runSequence = async () => {
 
-  if (window.SINGLEFILE) {
-    this.downloaded = true;
-    this.downloading = true;
-    this.showprogress = false;
-    this.progress = 100;
-    encbuf = window.xorbuf;
-    window.xorbuf = null;
-  }
-
-  this.decrypted = !DRM || window.SINGLEFILE;
-
-  let decrypt = async () => {
-    if (window.SINGLEFILE || !DRM) return;
-    try {
-      let res = await fetch('./English.txt');
-      let key = new Uint8Array(await res.arrayBuffer());
-      for (let i = 0; i < encbuf.length; i += 4096) {
-        encbuf[i] ^= key[i % key.length];
-        if (i % (4096 * 200) === 0) {
-          this.progress = i / encbuf.length * 100;
-          await new Promise(r => requestAnimationFrame(r));
+        let encbuf = new Uint8Array(SIZE);
+        let data = await fetch("_framework/data.data");
+        let cur = 0;
+        for await (const chunk of data.body) {
+            encbuf.set(chunk, cur);
+            cur += chunk.length;
+            this.progress = (cur / SIZE) * 100;
         }
-      }
-      this.decrypted = true;
-    } catch (e) { console.error("Decryption failed", e); }
-  };
 
-  let finish = async () => {
-    // Safety lock: Ensure we don't finish if App has already taken over
-    if (window.isGameStarting) return;
-    window.isGameStarting = true;
-
-    window.assetblob = URL.createObjectURL(new Blob([encbuf]));
-    await init();
-    await new Promise(r => loadData(dotnet.instance.Module, r));
-    localStorage["vfs_populated"] = true;
-    
-    if (this.root) {
-      this.root.style.animation = "fadeout 0.5s ease forwards";
-      this.root.addEventListener("animationend", () => {
-        this.root.remove();
-        loadfrontend();
-      });
-    } else {
-      loadfrontend();
-    }
-  };
-
-  let download = async () => {
-    if (this.downloading && !window.SINGLEFILE) return;
-    this.downloading = true;
-
-    if (!window.SINGLEFILE) {
-        encbuf = new Uint8Array(SIZE);
-        if (SPLIT) {
-            await Promise.all([...chunkify(splits.entries(), Math.ceil(splits.length / 5))].map(async chunk => {
-                for (let [idx, file] of chunk) {
-                    let data = await fetch(`_framework/data/${file}`);
-                    let buf = new Uint8Array(await data.arrayBuffer());
-                    encbuf.set(buf, idx * CHUNKSIZE);
-                    this.progress += CHUNKSIZE / SIZE * 100;
-                }
-            }));
-        } else {
-            let data = await fetch("_framework/data.data");
-            let cur = 0;
-            for await (const chunk of data.body) {
-                encbuf.set(chunk, cur);
-                cur += chunk.length;
-                this.progress = cur / SIZE * 100;
+        // 2. Decrypt
+        if (DRM && !window.SINGLEFILE) {
+            let res = await fetch('./English.txt');
+            let key = new Uint8Array(await res.arrayBuffer());
+            for (let i = 0; i < encbuf.length; i += 4096) {
+                encbuf[i] ^= key[i % key.length];
+                if (i % 1024000 === 0) await new Promise(r => requestAnimationFrame(r));
             }
         }
-    }
 
-    this.downloaded = true;
-    await decrypt();
-    if (this.decrypted) await finish();
-  };
+        // 3. Init Engine & Switch to App
+        await ensureEngineReady(encbuf);
+        
+        if (this.root) {
+            this.root.style.opacity = '0';
+            this.root.style.transition = 'opacity 0.5s';
+            setTimeout(() => {
+                this.root.remove();
+                loadfrontend();
+            }, 500);
+        }
+    };
 
-  download();
+    runSequence();
 
-  return h("main", { class: [use(store.theme)] },
-    h("div", { class: "mountain" }),
-    h("div", { id: "blur" }),
-    h("div", { class: "info" },
-      h(Logo, null),
-      $if(use(this.downloading),
-        h("div", null,
-          h("p", null, "Loading Assets... (", use(this.progress, Math.floor), "% )"),
-          h("div", { id: "bar" }, h("div", { id: "progress", style: { width: use`${this.progress}%` } }))
-        )
-      )
-    )
-  );
+    return h("div", null,
+        h("div", { class: "mountain" }),
+        h("h1", null, "CELESTE"),
+        h("div", { class: "bar-bg" }, h("div", { class: "bar-fill", style: { width: use`${this.progress}%` } }))
+    );
 }
 
-// --- Bootstrapper ---
-var app;
+// --- 5. Bootstrapper ---
 async function loadfrontend() {
-  if (document.getElementById("canvas")) return;
-  app = h(App).$;
-  document.body.appendChild(app.root);
+    if (document.getElementById("canvas")) return;
+    document.body.appendChild(h(App).$.root);
 }
 
+// Logic: If we have assets, just show the app. If not, show the splash.
 if (localStorage["vfs_populated"] === "true") {
-  loadfrontend();
+    loadfrontend();
 } else {
-  document.body.appendChild(h(IntroSplash));
+    document.body.appendChild(h(IntroSplash).$.root);
 }
 
-export { app, store };
+export { store };
