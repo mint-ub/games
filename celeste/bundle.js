@@ -4513,20 +4513,39 @@ var getAssemblyExports;
 var getConfig;
 var initted = false;
 
+// --- FIX 1: Enhanced WebGL Shim to prevent Black Screen ---
+// This forces the browser to keep the image (preserveDrawingBuffer) and give us the Stencil buffer.
+(function() {
+  var oldGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(name, options) {
+    if (name === "webgl" || name === "experimental-webgl" || name === "webgl2") {
+      options = options || {};
+      options.alpha = false;
+      options.depth = true;
+      options.stencil = true; // REQUIRED for Celeste
+      options.antialias = false;
+      options.powerPreference = "high-performance";
+      options.preserveDrawingBuffer = true; // REQUIRED to prevent black screen flickering
+      
+      var ctx = oldGetContext.apply(this, ["webgl2", options]);
+      return ctx || oldGetContext.apply(this, ["webgl", options]);
+    }
+    return oldGetContext.apply(this, arguments);
+  };
+})();
+
 async function init() {
   if (initted) return;
+  
   ({ setModuleImports, getAssemblyExports, getConfig } = await dotnet.withModuleConfig({
     onConfigLoaded: (config) => {
       config.disableIntegrityCheck = true;
-    },
-    // FIX ADDED: FNA requires a Stencil buffer. Without this, WebGL fails and crashes Mono.
-    canvasContextAttributes: {
-        alpha: false,
-        depth: true,
-        stencil: true, 
-        antialias: false,
-        powerPreference: "high-performance",
-        majorVersion: 2
+      // Force environment variables for stability
+      config.environmentVariables = {
+        "MONO_LOG_LEVEL": "info",
+        "FNA3D_FORCE_DRIVER": "OpenGL",
+        "FNA_OPENGL_FORCE_ES3": "1"
+      };
     }
   }).withDiagnosticTracing(false).withApplicationArgumentsFromQuery().create());
   
@@ -4541,40 +4560,59 @@ async function init() {
   await new Promise((r) => dotnet.instance.Module.FS.syncfs(true, r));
   console.debug("synced; exposing dotnet FS");
   window.FS = dotnet.instance.Module.FS;
+  
   setModuleImports("main.js", {
     setMainLoop: MainLoop,
     stopMainLoop: () => dotnet.instance.Module.pauseMainLoop(),
     syncFs: (cb) => dotnet.instance.Module.FS.syncfs(false, cb)
   });
+  
   initted = true;
 }
 
 var ts = performance.now();
 var fps;
+
+// --- FIX 2: Robus Game Loop ---
+// Prevents the "divide by zero" crash without stopping the game
 var MainLoop = (cb) => {
   dotnet.instance.Module.setMainLoop(() => {
     let now = performance.now();
     let dt = now - ts;
+    
+    // If dt is effectively zero, force it to 1ms to prevent crashes
+    // but DO NOT return, or the game loop will hang forever (black screen).
+    if (dt <= 0) dt = 1;
+
     ts = now;
     fps = 1e3 / dt;
-    // Safety check to prevent crashing the loop if the game stutters
-    if (dt > 0) cb();
+    
+    try {
+        cb();
+    } catch (e) {
+        // If one frame fails, log it but let the game keep running
+        console.error("Game Loop Error:", e);
+    }
   });
 };
 
 async function start(canvas) {
   console.info("Starting...");
   
-  // FIX ADDED: Ensure WebGL context is pre-warmed correctly if Dotnet didn't catch it
-  try {
-     const gl = canvas.getContext("webgl2", {
-        alpha: false,
-        depth: true,
-        stencil: true,
-        antialias: false,
-        powerPreference: "high-performance"
-     });
-  } catch (e) { console.warn("Context pre-warm failed", e); }
+  if (!canvas) {
+      console.error("Canvas is missing!");
+      return;
+  }
+
+  // --- FIX 3: Ensure Canvas has size ---
+  // If the canvas is 0x0, FNA will crash or render black.
+  if (canvas.width === 0 || canvas.height === 0) {
+      canvas.width = 1280;
+      canvas.height = 720;
+  }
+
+  // Pre-touch the context to ensure the shim fires
+  const gl = canvas.getContext("webgl2");
 
   if (!dotnet.instance.Module.FS.analyzePath("/Content").path) {
     await new Promise((r) => loadData(dotnet.instance.Module, r));
@@ -4586,9 +4624,13 @@ async function start(canvas) {
   
   dotnet.instance.Module.canvas = canvas;
   
-  await dotnet.run();
-  let Exports = await getAssemblyExports("fna-wasm");
-  Exports.Program.StartGame();
+  try {
+      await dotnet.run();
+      let Exports = await getAssemblyExports("fna-wasm");
+      Exports.Program.StartGame();
+  } catch (e) {
+      console.error("Startup Error:", e);
+  }
 }
 
 async function downloadsave() {
@@ -4777,7 +4819,6 @@ canvas {
     display: block;
 }
 
-
     .top-bar, .content, footer, dialog {
       display: none; /* hide UI for fullscreen auto-play */
     }
@@ -4907,7 +4948,7 @@ var chunkify = function* (itr, size) {
   if (chunk.length) yield chunk;
 };
 
-// Duplicate store removal attempted, but keeping everything in per request to avoid breaking dependencies if bundler expects it.
+// Keeps all components as requested
 
 function IntroSplash() {
   this.css = `
