@@ -4512,13 +4512,24 @@ var setModuleImports;
 var getAssemblyExports;
 var getConfig;
 var initted = false;
+
 async function init() {
   if (initted) return;
   ({ setModuleImports, getAssemblyExports, getConfig } = await dotnet.withModuleConfig({
     onConfigLoaded: (config) => {
       config.disableIntegrityCheck = true;
+    },
+    // FIX ADDED: FNA requires a Stencil buffer. Without this, WebGL fails and crashes Mono.
+    canvasContextAttributes: {
+        alpha: false,
+        depth: true,
+        stencil: true, 
+        antialias: false,
+        powerPreference: "high-performance",
+        majorVersion: 2
     }
   }).withDiagnosticTracing(false).withApplicationArgumentsFromQuery().create());
+  
   if (!dotnet.instance.Module.FS.analyzePath("/libsdl").path) {
     dotnet.instance.Module.FS.mkdir("/libsdl", 493);
     dotnet.instance.Module.FS.mount(
@@ -4537,6 +4548,7 @@ async function init() {
   });
   initted = true;
 }
+
 var ts = performance.now();
 var fps;
 var MainLoop = (cb) => {
@@ -4545,11 +4557,25 @@ var MainLoop = (cb) => {
     let dt = now - ts;
     ts = now;
     fps = 1e3 / dt;
-    cb();
+    // Safety check to prevent crashing the loop if the game stutters
+    if (dt > 0) cb();
   });
 };
+
 async function start(canvas) {
   console.info("Starting...");
+  
+  // FIX ADDED: Ensure WebGL context is pre-warmed correctly if Dotnet didn't catch it
+  try {
+     const gl = canvas.getContext("webgl2", {
+        alpha: false,
+        depth: true,
+        stencil: true,
+        antialias: false,
+        powerPreference: "high-performance"
+     });
+  } catch (e) { console.warn("Context pre-warm failed", e); }
+
   if (!dotnet.instance.Module.FS.analyzePath("/Content").path) {
     await new Promise((r) => loadData(dotnet.instance.Module, r));
     console.info("Loaded assets into VFS");
@@ -4557,11 +4583,14 @@ async function start(canvas) {
   if (window.assetblob) {
     URL.revokeObjectURL(window.assetblob);
   }
+  
   dotnet.instance.Module.canvas = canvas;
+  
   await dotnet.run();
   let Exports = await getAssemblyExports("fna-wasm");
   Exports.Program.StartGame();
 }
+
 async function downloadsave() {
   await new Promise((r) => dotnet.instance.Module.FS.syncfs(false, r));
   let tozip = {};
@@ -4585,6 +4614,7 @@ async function downloadsave() {
   a.click();
   a.remove();
 }
+
 async function unzipsave(file) {
   let data = await file.arrayBuffer();
   let unzipped = await new Promise((r, j) => unzip(new Uint8Array(data), (e, data2) => {
@@ -4607,6 +4637,7 @@ async function unzipsave(file) {
   await new Promise((r) => dotnet.instance.Module.FS.syncfs(false, r));
   console.log("synced!");
 }
+
 async function uploadsave() {
   let input = h("input", { type: "file" });
   await new Promise((r) => {
@@ -4623,53 +4654,53 @@ async function uploadsave() {
 // SaveManager.jsx
 function SaveManager() {
   this.css = `
-		flex-direction: column;
-		// justify-content: center;
-		align-items: center;
-		gap: 0.75rem;
-		width: 100%;
-		height: calc(100% - 3rem);
-		#dragarea {
-			display: flex;
-			gap: 0.25rem;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			width: 95%;
-			height: auto;
-			aspect-ratio: 1.25 / 1;
-			border: 2px dashed var(--fg6);
-			border-radius: 0.6rem;
-			color: var(--fg6);
-			transition: 0.3s ease;
+    flex-direction: column;
+    // justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    height: calc(100% - 3rem);
+    #dragarea {
+      display: flex;
+      gap: 0.25rem;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 95%;
+      height: auto;
+      aspect-ratio: 1.25 / 1;
+      border: 2px dashed var(--fg6);
+      border-radius: 0.6rem;
+      color: var(--fg6);
+      transition: 0.3s ease;
 
-			&.dragover {
-			  color: var(--fg3);
-				border-color: var(--accent);
-				background-color: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--surface2) 40%, transparent));
-				transition: 0.3s ease;
-				box-shadow: 0 0 28px 0 color-mix(in srgb, var(--accent) 20%, transparent);
-			}
+      &.dragover {
+        color: var(--fg3);
+        border-color: var(--accent);
+        background-color: color-mix(in srgb, var(--accent) 5%, color-mix(in srgb, var(--surface2) 40%, transparent));
+        transition: 0.3s ease;
+        box-shadow: 0 0 28px 0 color-mix(in srgb, var(--accent) 20%, transparent);
+      }
 
-			h1 {
-				margin: 0;
-				margin-bottom: 1.25rem;
-			}
-		}
+      h1 {
+        margin: 0;
+        margin-bottom: 1.25rem;
+      }
+    }
 
-		& > button {
-			width: 95%;
-		}
+    & > button {
+      width: 95%;
+    }
 
-		#head {
+    #head {
       font-size: 1.5rem;
-			font-weight: 650;
-			font-family: var(--font-display);
-			margin-block: 0.5rem;
-			align-self: flex-start;
+      font-weight: 650;
+      font-family: var(--font-display);
+      margin-block: 0.5rem;
+      align-self: flex-start;
       margin-left: 2.5%;
-		}
-	`;
+    }
+  `;
   return /* @__PURE__ */ h("div", { class: "flex" }, /* @__PURE__ */ h("span", { id: "head" }, "Save Manager"), /* @__PURE__ */ h(
     "div",
     {
@@ -4711,161 +4742,398 @@ function SaveManager() {
   } }, /* @__PURE__ */ h("span", { class: "material-symbols-rounded" }, "cloud_download"), /* @__PURE__ */ h("span", { class: "label" }, "Download current save")));
 }
 
-// --- 1. Global Engine State (Bulletproof Singleton) ---
-window.CELESTE_ENGINE_STATE = window.CELESTE_ENGINE_STATE || {
-    initStarted: false,
-    initFinished: false,
-    gameStarted: false,
-    enginePromise: null
-};
+function App() {
+  this.css = `
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;   /* vertical centering */
+    justify-content: center; /* horizontal centering */
+    margin: 0;
+    background-color: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
 
-// --- 2. Shared Utilities ---
+.game {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center; /* horizontal centering */
+    align-items: center;     /* vertical centering */
+}
+
+canvascontainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+}
+
+canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+
+    .top-bar, .content, footer, dialog {
+      display: none; /* hide UI for fullscreen auto-play */
+    }
+  `;
+
+  this.loaded = false;
+  this.started = false;
+  this.allowPlay = false;
+
+  let updatePlay = () => {
+    this.allowPlay = this.loaded || !this.started;
+  };
+  handle(use(this.loaded), updatePlay);
+  handle(use(this.started), updatePlay);
+
+  // Initialize frontend and auto-start
+  window.initPromise = (async () => {
+    await init();
+    this.loaded = true;
+    log("var(--success)", "Loaded frontend!");
+    if (!this.started) startgame();
+  })();
+
+  this.fullscreen = false;
+  document.addEventListener("fullscreenchange", () => {
+    this.fullscreen = document.fullscreen;
+  });
+
+  setInterval(() => {
+    this.fps = fps;
+  }, 1e3);
+
+  const startgame = () => {
+    this.started = true;
+    start(this.canvas);
+    this.allowPlay = false;
+  };
+
+  return h("main", { class: [use(store.theme)] },
+    h("div", { class: "game" },
+      h("canvascontainer", null,
+        h("div", { class: [use(this.started, f => f && "hidden")] },
+          h("div", null,
+
+          )
+        ),
+        h("canvas", {
+          id: "canvas",
+          "bind:this": use(this.canvas),
+          "on:contextmenu": e => e.preventDefault(),
+          "on:webglcontextlost": e => e.preventDefault() 
+        })
+      )
+    )
+  );
+}
+
+function FuckMozilla() {
+  this.css = `
+    width: min(960px, 100%);
+
+    background-color: var(--accent);
+    color: var(--fg);
+    padding: 1em;
+    padding-top: 0.5em;
+    margin-bottom: 1em;
+    border-radius: 0.6rem;
+
+
+    h1 {
+      display: flex;
+      align-items: center;
+      gap: 0.25em;
+      span {
+        font-size: 2.25rem;
+      }
+    }
+  `;
+  return /* @__PURE__ */ h("div", null, /* @__PURE__ */ h("h1", null, /* @__PURE__ */ h("span", { class: "material-symbols-rounded" }, "warning"), "THIS MIGHT NOT WORK WELL ON FIREFOX!"), /* @__PURE__ */ h("p", null, "Chromium's WASM implementation is generally better, and it was what was tested on the most. It will probably still work (might not!) on Firefox but you should really be using a Chromium-based browser for this."), /* @__PURE__ */ h("button", { "on:click": () => this.root.remove() }, "Dismiss"));
+}
+function Logo() {
+  this.css = `
+    .logo {
+      image-rendering: pixelated;
+      -ms-interpolation-mode: nearest-neighbor;
+      width: 3.75rem;
+      height: 3.75rem;
+      margin: 0;
+      padding: 0;
+    }
+
+    h1 {
+      font-size: 2rem;
+      display: flex;
+    }
+
+    h1 subt {
+      font-size: 0.5em;
+      margin-left: 0.25em;
+      color: var(--fg6);
+    }
+  `;
+  return /* @__PURE__ */ h("span", { class: "flex vcenter" }, /* @__PURE__ */ h("img", { class: "logo", src: document.querySelector("link[rel=icon]").href }), /* @__PURE__ */ h("h1", null, "celeste-wasm", /* @__PURE__ */ h("subt", null, "v", version)));
+}
+
 var import_jszip = __toESM(require_jszip_min());
 var store = $store(
-    { theme: window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark" },
-    { ident: "user-options", backing: "localstorage", autosave: "auto" }
+  {
+    theme: window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+  },
+  { ident: "user-options", backing: "localstorage", autosave: "auto" }
 );
 
-const chunkify = function* (itr, size) {
-    let chunk = [];
-    for (const v of itr) {
-        chunk.push(v);
-        if (chunk.length === size) { yield chunk; chunk = []; }
-    }
-    if (chunk.length) yield chunk;
-};
-
-// --- 3. The Core Engine Loader ---
-// This function can be called 100 times, but will only run ONCE.
-const ensureEngineReady = async (assetBuffer = null) => {
-    if (window.CELESTE_ENGINE_STATE.enginePromise) return window.CELESTE_ENGINE_STATE.enginePromise;
-
-    window.CELESTE_ENGINE_STATE.enginePromise = (async () => {
-        window.CELESTE_ENGINE_STATE.initStarted = true;
-        
-        // If we have new assets, blob them. If not, we assume VFS is already populated.
-        if (assetBuffer) {
-            window.assetblob = URL.createObjectURL(new Blob([assetBuffer]));
-        }
-
-        console.log("Mono Runtime");
-        await init(); 
-        
-        if (assetBuffer) {
-            await new Promise(r => loadData(dotnet.instance.Module, r));
-            localStorage["vfs_populated"] = "true";
-        }
-
-        window.CELESTE_ENGINE_STATE.initFinished = true;
-        console.log("Engine Ready");
-    })();
-
-    return window.CELESTE_ENGINE_STATE.enginePromise;
-};
-
-// --- 4. UI Components ---
-
-function App() {
-    this.css = `
-        width: 100vw; height: 100vh; overflow: hidden;
-        display: flex; align-items: center; justify-content: center;
-        background-color: var(--bg);
-        canvas { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
-        .top-bar, .content, footer, dialog { display: none; }
-    `;
-
-    // This handles the transition from "Loaded" to "Running"
-    const bootGame = async () => {
-        if (!this.canvas) return;
-        if (window.CELESTE_ENGINE_STATE.gameStarted) return;
-
-        await ensureEngineReady(); // Make sure init() is done
-        
-        console.log(" Starting Game Loop");
-        window.CELESTE_ENGINE_STATE.gameStarted = true;
-        start(this.canvas); 
-    };
-
-
-    setTimeout(() => bootGame(), 500);
-
-    return h("main", { class: [use(store.theme)] },
-        h("div", { class: "game" },
-            h("canvas", {
-                id: "canvas",
-                "bind:this": use(this.canvas),
-                "on:contextmenu": e => e.preventDefault()
-            })
-        )
-    );
+if (window.SINGLEFILE) {
+  document.body.querySelector("#interstitial").remove();
 }
+
+var chunkify = function* (itr, size) {
+  let chunk = [];
+  for (const v of itr) {
+    chunk.push(v);
+    if (chunk.length === size) {
+      yield chunk;
+      chunk = [];
+    }
+  }
+  if (chunk.length) yield chunk;
+};
+
+// Duplicate store removal attempted, but keeping everything in per request to avoid breaking dependencies if bundler expects it.
 
 function IntroSplash() {
-    this.css = `
-        position: fixed; inset: 0; z-index: 9999;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        background-color: var(--bg); color: var(--fg);
-        .mountain { position: absolute; inset: 0; background: url(${mountainsrc.href}) center/cover; z-index: -1; filter: blur(10px); }
-        .bar-bg { width: 300px; height: 8px; background: #222; border-radius: 4px; margin-top: 20px; overflow: hidden; }
-        .bar-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
-    `;
+  this.css = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 9999999;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    background-color: var(--bg);
+    color: var(--fg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 
+    .mountain {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      background-image: url(${mountainsrc.href});
+      background-size: cover;
+      background-position: center;
+    }
+
+    #opaque {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      background-color: var(--bg);
+      opacity: 0;
+      animation: fadeout 1.3s ease 0s 1;
+    }
+
+    #blur {
+      backdrop-filter: blur(24px);
+      background-color: color-mix(in srgb, var(--bg) 60%, transparent);
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 2;
+    }
+
+    .info {
+      z-index: 3;
+      border-radius: 1em;
+      background-color: color-mix(in srgb, var(--surface0) 80%, transparent);
+      backdrop-filter: blur(30px);
+      max-width: max(480px, 40%);
+      padding: 2em;
+      animation: fadeinandmove 1s ease 0s 1;
+      div { margin-block: 1em; }
+    }
+
+    button,
+    #bar {
+      animation: fadeinandmove 0.15s ease 0s 1;
+      width: 100%;
+      height: 0.5em;
+      background-color: var(--bg);
+      border-radius: 0.5em;
+    }
+
+    #progress {
+      transition: width 0.2s ease;
+      height: 0.5em;
+      background-color: var(--accent);
+      border-radius: 0.5em;
+    }
+
+    .inner {
+      margin-inline: 0.8rem;
+    }
+
+    .action { padding: 1em; }
+
+    @keyframes fadeout {
+      from { opacity: 1; scale: 1; }
+      to { opacity: 0; scale: 1.2; }
+    }
+  `;
+
+  let encbuf;
+  this.progress = 0;
+  this.downloading = false;
+  this.downloaded = false;
+  this.showprogress = true;
+
+  if (window.SINGLEFILE) {
+    this.downloaded = true;
+    this.downloading = true;
+    this.showprogress = false;
+    this.progress = 100;
+    encbuf = window.xorbuf;
+    window.xorbuf = null;
+  }
+
+  this.decrypted = !DRM || window.SINGLEFILE;
+  this.decrypterror = "";
+
+  // ----- auto decrypt -----
+  let decrypt = async () => {
+    if (window.SINGLEFILE || !DRM) {
+      this.decrypted = true;
+      return;
+    }
+
+    try {
+      // Update this path to your key file if needed
+      let keyFileUrl = './English.txt';
+      let res = await fetch(keyFileUrl);
+      let key = new Uint8Array(await res.arrayBuffer());
+      this.progress = 0;
+
+      for (let i = 0; i < encbuf.length; i += 4096) {
+        encbuf[i] ^= key[i % key.length];
+        if (i % (4096 * 200) === 0) {
+          this.progress = i / encbuf.length * 100;
+          await new Promise(r => requestAnimationFrame(r));
+        }
+      }
+
+      this.decrypted = true;
+    } catch (e) {
+      console.error("Decryption failed:", e);
+      this.decrypterror = "Auto decryption failed, check key file path.";
+    }
+  };
+
+  // ----- finish (play) -----
+  let finish = async () => {
+    window.assetblob = URL.createObjectURL(new Blob([encbuf]));
+    await init();
+    await new Promise(r => loadData(dotnet.instance.Module, r));
+    console.info("Cached and loaded assets into VFS");
+    localStorage["vfs_populated"] = true;
+    await loadfrontend();
+
+    if (this.root) {
+      this.root.addEventListener("animationend", () => this.root.remove());
+      this.root.style.animation = "fadeout 0.5s ease";
+    }
+  };
+
+  // ----- auto download -----
+  let download = async () => {
+    this.downloading = true;
     this.progress = 0;
 
-    const runSequence = async () => {
-
-        let encbuf = new Uint8Array(SIZE);
-        let data = await fetch("_framework/data.data");
-        let cur = 0;
-        for await (const chunk of data.body) {
-            encbuf.set(chunk, cur);
-            cur += chunk.length;
-            this.progress = (cur / SIZE) * 100;
+    if (SPLIT) {
+      encbuf = new Uint8Array(SIZE);
+      await Promise.all([...chunkify(splits.entries(), Math.ceil(splits.length / 5))].map(async chunk => {
+        for (let [idx, file] of chunk) {
+          let data = await fetch(`_framework/data/${file}`);
+          let buf = new Uint8Array(await data.arrayBuffer());
+          encbuf.set(buf, idx * CHUNKSIZE);
+          this.progress += CHUNKSIZE / SIZE * 100;
         }
+      }));
+    } else {
+      encbuf = new Uint8Array(SIZE);
+      let data = await fetch("_framework/data.data");
+      let cur = 0;
+      for await (const chunk of data.body) {
+        encbuf.set(chunk, cur);
+        cur += chunk.length;
+        this.progress = cur / SIZE * 100;
+      }
+    }
 
-        // 2. Decrypt
-        if (DRM && !window.SINGLEFILE) {
-            let res = await fetch('./English.txt');
-            let key = new Uint8Array(await res.arrayBuffer());
-            for (let i = 0; i < encbuf.length; i += 4096) {
-                encbuf[i] ^= key[i % key.length];
-                if (i % 1024000 === 0) await new Promise(r => requestAnimationFrame(r));
-            }
-        }
+    this.downloaded = true;
 
-        // 3. Init Engine & Switch to App
-        await ensureEngineReady(encbuf);
-        
-        if (this.root) {
-            this.root.style.opacity = '0';
-            this.root.style.transition = 'opacity 0.5s';
-            setTimeout(() => {
-                this.root.remove();
-                loadfrontend();
-            }, 500);
-        }
-    };
+    // Auto decrypt then play
+    await decrypt();
+    if (this.downloaded && this.decrypted) {
+      await finish();
+    }
+  };
 
-    runSequence();
+  // ----- start everything automatically -----
+  download();
 
-    return h("div", null,
-        h("div", { class: "mountain" }),
-        h("h1", null, "CELESTE"),
-        h("div", { class: "bar-bg" }, h("div", { class: "bar-fill", style: { width: use`${this.progress}%` } }))
-    );
+  return h("main", { class: [use(store.theme)] },
+    h("div", { class: "mountain" }),
+    h("div", { id: "opaque" }),
+    h("div", { id: "blur" }),
+    h("div", { class: "info" },
+      h(Logo, null),
+      h("div", { class: "inner" },
+        h("p", null, "", " "),
+        h("p", null, ""),
+        h("p", null, DRM && " " || "", "", h("br", null), h("br", null), !window.SINGLEFILE && "")
+      ),
+      $if(use(this.downloading),
+        $if(use(this.showprogress),
+          h("div", null,
+            h("p", null, "Downloading... (", use(this.progress, Math.floor), "% done)"),
+            h("div", { id: "bar" }, h("div", { id: "progress", style: { width: use`${this.progress}%` } }))
+          )
+        )
+      )
+    )
+  );
 }
 
-// --- 5. Bootstrapper ---
+var app;
 async function loadfrontend() {
-    if (document.getElementById("canvas")) return;
-    document.body.appendChild(h(App).$.root);
+  app = h(App).$;
+  document.body.appendChild(app.root);
 }
 
-// Logic: If we have assets, just show the app. If not, show the splash.
-if (localStorage["vfs_populated"] === "true") {
-    loadfrontend();
+if (localStorage["vfs_populated"] !== "true") {
+  document.body.appendChild(h(IntroSplash));
 } else {
-    document.body.appendChild(h(IntroSplash).$.root);
+  loadfrontend();
 }
 
-export { store };
+export { app, store };
