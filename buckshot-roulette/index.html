@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+    <title>Buckshot Roulette</title>
+    <style>
+        /* Force Fullscreen */
+        html, body {
+            margin: 0; padding: 0; border: 0;
+            width: 100%; height: 100%;
+            overflow: hidden; background-color: black;
+        }
+        #canvas {
+            display: block; width: 100vw; height: 100vh;
+        }
+        #canvas:focus { outline: none; }
+
+        /* Loading Status Overlay */
+        #status {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #000; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 10;
+        }
+        #status-splash { max-height: 100%; max-width: 100%; object-fit: contain; }
+        #status-progress { width: 50%; margin-top: 20px; }
+        #loading-text { color: #9b3943; font-family: sans-serif; margin-top: 10px; font-weight: bold; }
+    </style>
+    <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+</head>
+<body>
+    <canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+
+    <div id="status">
+        <img id="status-splash" src="index.png" alt="">
+        <div id="loading-text">RECONSTRUCTING DATA...</div>
+        <progress id="status-progress" value="0" max="100"></progress>
+    </div>
+
+    <script src="index.js"></script>
+    <script>
+        const statusOverlay = document.getElementById('status');
+        const statusProgress = document.getElementById('status-progress');
+        const loadingText = document.getElementById('loading-text');
+
+        // ADJUST THESE TO MATCH YOUR ACTUAL SPLIT FILES
+        const PCK_CHUNKS = 7; // Change this to how many parts you split index.pck into
+        const PCK_BASE_NAME = "index.pck."; // Assumes files like index.pck.part1, part2...
+
+        async function fetchAndMergePck() {
+            let chunks = [];
+            try {
+                for (let i = 1; i <= PCK_CHUNKS; i++) {
+                    loadingText.textContent = `DOWNLOADING PART ${i} OF ${PCK_CHUNKS}...`;
+                    const response = await fetch(`${PCK_BASE_NAME}${i}`);
+                    if (!response.ok) throw new Error(`Failed to load ${PCK_BASE_NAME}${i}`);
+                    const buffer = await response.arrayBuffer();
+                    chunks.push(buffer);
+                    statusProgress.value = (i / PCK_CHUNKS) * 100;
+                }
+
+                loadingText.textContent = "INITIALIZING ENGINE...";
+                const mergedBlob = new Blob(chunks, { type: "application/octet-stream" });
+                return URL.createObjectURL(mergedBlob);
+            } catch (err) {
+                loadingText.textContent = "ERROR LOADING DATA";
+                console.error(err);
+            }
+        }
+
+        (async function () {
+            // 1. Merge the split .pck files
+            const mergedPckUrl = await fetchAndMergePck();
+
+            // 2. Setup Godot Config
+            const GODOT_CONFIG = {
+                "args": [],
+                "canvasResizePolicy": 2,
+                "executable": "index",
+                "fileSizes": { "index.wasm": 35740641 }, // Leave original wasm size
+                "focusCanvas": true,
+                "mainPack": mergedPckUrl, // Tell Godot to use our Merged Blob
+            };
+
+            const engine = new Engine(GODOT_CONFIG);
+
+            // 3. Start the Game
+            engine.startGame({
+                'onProgress': function (current, total) {
+                    if (total > 0) {
+                        statusProgress.value = (current / total) * 100;
+                        loadingText.textContent = "LOADING GAME ASSETS...";
+                    }
+                },
+            }).then(() => {
+                statusOverlay.remove(); // Remove entire loading UI when finished
+            }).catch(err => {
+                loadingText.textContent = "FAIL: " + err.message;
+            });
+        }());
+    </script>
+</body>
+</html>

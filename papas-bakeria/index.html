@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="robots" content="noindex, nofollow">
+        <style>
+            html, body {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+                overflow: hidden;
+                background-color: #000;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="container"></div>
+
+        <script>
+            window.RufflePlayer = window.RufflePlayer || {};
+            window.RufflePlayer.config = {
+                "autoplay": "on",
+                "contextMenu": "off",
+                "unmuteOverlay": "hidden",
+                "letterbox": "on"
+            };
+
+            document.addEventListener("DOMContentLoaded", function () {
+                const swf = './game.swf';
+                const ruffle = window.RufflePlayer.newest();
+                const player = ruffle.createPlayer();
+                
+                const container = document.getElementById("container");
+                container.appendChild(player);
+
+                player.style.width = "100vw";
+                player.style.height = "100vh";
+
+                player.load({
+                    url: swf
+                }).catch((e) => {
+                    console.error("Ruffle failed to load:", e);
+                });
+            });
+        </script>
+        <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+    </body>
+</html>
