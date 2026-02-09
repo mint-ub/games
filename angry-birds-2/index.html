@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <style>
+    body, html { margin: 0; overflow: hidden; background-color: #231F20; width: 100%; height: 100%; }
+    canvas { width: 100vw !important; height: 100vh !important; display: block; }
+    #unity-container { width: 100%; height: 100%; }
+    #loading-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; justify-content: center; align-items: center;
+      color: white; font-family: sans-serif; z-index: 10; background: #231F20;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="loading-overlay"></div>
+  <div id="unity-container">
+    <canvas id="unity-canvas" width="960" height="600" tabindex="-1"></canvas>
+  </div>
+
+  <script>
+ 
+    const BUILD_FOLDER = "67d3aaa8-cbe4-4a15-a26e-69de3f886bc9";
+    const totalDataChunks = 3; 
+    const canvas = document.querySelector("#unity-canvas");
+    const loadingOverlay = document.querySelector("#loading-overlay");
+
+    async function fetchAndMerge(baseUrl, count) {
+      const chunks = [];
+      for (let i = 1; i <= count; i++) {
+        const response = await fetch(`${baseUrl}.${i}`);
+        if (!response.ok) throw new Error(`Failed to load part ${i}`);
+        chunks.push(await response.arrayBuffer());
+        console.log(`Loaded chunk ${i} of ${count}`);
+      }
+      const blob = new Blob(chunks, { type: "application/octet-stream" });
+      return URL.createObjectURL(blob);
+    }
+
+    async function start() {
+      try {
+        console.log("Merging data chunks...");
+
+        const dataUrl = await fetchAndMerge(`${BUILD_FOLDER}/game.data.gz`, totalDataChunks);
+
+        const config = {
+          dataUrl: dataUrl,
+          frameworkUrl: `${BUILD_FOLDER}/framework.js.gz`,
+          codeUrl: `${BUILD_FOLDER}/game.wasm.gz`,
+          streamingAssetsUrl: "streaming",
+          companyName: "play.unity.com",
+          productName: "Unity Play Project",
+          productVersion: "1.0",
+        };
+
+
+        const script = document.createElement("script");
+        script.src = `${BUILD_FOLDER}/loader.js`;
+        script.onload = () => {
+          createUnityInstance(canvas, config, (progress) => {
+            loadingOverlay.textContent = `Loading: ${Math.round(progress * 100)}%`;
+          }).then((instance) => {
+            loadingOverlay.style.display = "none";
+            window.unityInstance = instance;
+          }).catch((message) => {
+            alert(message);
+          });
+        };
+        document.body.appendChild(script);
+
+      } catch (e) {
+        console.error("Initialization failed:", e);
+        loadingOverlay.textContent = "Error merging files. Check console.";
+      }
+    }
+
+
+    window.AudioContext = window.AudioContext || window.webkitAudioContext;
+
+    window.addEventListener("DOMContentLoaded", start);
+  </script>
+</body>
+</html>
