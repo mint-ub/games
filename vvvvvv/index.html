@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>vvvvvv</title>
+    <style>
+        body { background-color: black; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+
+    <script type='text/javascript'>
+      var Module = {
+        canvas: document.getElementById('canvas'),
+        print: console.log,
+        printErr: console.error
+      };
+    </script>
+
+    <script src="VVVVVV.data.js"></script>
+    
+    <script async src="VVVVVV.js"></script>
+</body>
+</html>
